@@ -1,40 +1,16 @@
-\# F1 Telemetry Zero-Trust Gateway
+## Architecture
 
-
-
-A containerized, low-latency security gateway for high-frequency Formula 1 UDP telemetry streams (EA F1 25, 60Hz on port `20777`). Designed to enforce cryptographic integrity, mutual authentication, and physics-based anomaly detection while keeping end-to-end overhead under \*\*5ms\*\*.
-
-
-
-\## Architecture
-
-
-
-```text
-
-\[EA F1 25 / 60Hz Car Sim] ── UDP :20777 ──► \[Edge Gateway]
-
-&#x20;                                               │ Perimeter filter + binary framing
-
-\[Red-Team Attack CLI] ──── Spoof / Replay ─────►│ Seq + Timestamp + HMAC-SHA256
-
-&#x20;                                               │ Persistent mTLS 1.3 (TCP :8443)
-
-&#x20;                                               ▼
-
-&#x20;                                       \[Factory Server]
-
-&#x20;                                               │ Verifies mTLS cert, HMAC, anti-replay
-
-&#x20;                                               │ Physics \& frame-drop anomaly checks
-
-&#x20;                                               ▼
-
-&#x20;                                  \[SQLite WAL + NDJSON SIEM]
-
-&#x20;                                               │ WebSocket (10Hz)
-
-&#x20;                                               ▼
-
-&#x20;                                    \[Pit-Wall Web Dashboard]
-
+```mermaid
+flowchart LR
+    Car["EA F1 25 / 60Hz Car Sim"] -->|"Raw Binary UDP :20777"| Edge["Trackside Edge Gateway"]
+    Attacker["Red-Team Attack CLI"] -.->|"Spoof / Replay / Fuzz"| Edge
+    Edge -->|"Seq + Timestamp + HMAC-SHA256<br/>Persistent mTLS 1.3 :8443"| Factory["Factory Server"]
+    Attacker -.->|"Tampered HMAC / Rogue TLS"| Factory
+    Factory --> Verify{"mTLS + HMAC<br/>+ Anti-Replay"}
+    Verify -->|"Rejected"| SIEM["SQLite WAL + NDJSON SIEM"]
+    Verify -->|"Verified"| Physics["Physics & Frame-Drop Engine"]
+    Physics -->|"Anomaly"| SIEM
+    Physics -->|"Valid Telemetry"| Store["Telemetry Store"]
+    Store -->|"WebSocket 10Hz"| Dash["Pit-Wall Dashboard :8000"]
+    SIEM -->|"WebSocket 10Hz"| Dash
+```
