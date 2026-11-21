@@ -1,0 +1,87 @@
+services:
+  cert-init:
+    build: .
+    volumes:
+      - f1_certs:/certs
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /certs/factory.crt ]; then
+          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+            -keyout /certs/ca.key -out /certs/ca.crt -subj "/CN=F1-PitWall-Root-CA"
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout /certs/factory.key -out /certs/factory.csr -subj "/CN=factory-server"
+          printf "subjectAltName=DNS:factory-server,DNS:localhost,IP:127.0.0.1" > /certs/san.ext
+          openssl x509 -req -in /certs/factory.csr -CA /certs/ca.crt -CAkey /certs/ca.key \
+            -CAcreateserial -out /certs/factory.crt -days 365 -extfile /certs/san.ext
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout /certs/edge.key -out /certs/edge.csr -subj "/CN=trackside-edge-01"
+          openssl x509 -req -in /certs/edge.csr -CA /certs/ca.crt -CAkey /certs/ca.key \
+            -CAcreateserial -out /certs/edge.crt -days 365
+          rm -f /certs/*.csr /certs/*.srl /certs/san.ext
+        fi
+
+  factory-server:
+    build: .
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+    environment:
+      FACTORY_LISTEN_HOST: "0.0.0.0"
+      FACTORY_PORT: "8443"
+      CERTS_DIR: "/certs"
+      DATA_DIR: "/data"
+      LOGS_DIR: "/logs"
+      F1_HMAC_SECRET: "${F1_HMAC_SECRET:-pitwall-demo-hmac-secret}"
+    ports:
+      - "8443:8443"
+    volumes:
+      - f1_certs:/certs:ro
+      - f1_data:/data
+      - f1_logs:/logs
+    command: ["python", "-m", "factory.server"]
+
+  edge-gateway:
+    build: .
+    depends_on:
+      - factory-server
+    environment:
+      UDP_LISTEN_HOST: "0.0.0.0"
+      UDP_LISTEN_PORT: "20777"
+      FACTORY_HOST: "factory-server"
+      FACTORY_PORT: "8443"
+      FACTORY_SERVER_NAME: "factory-server"
+      CERTS_DIR: "/certs"
+      F1_HMAC_SECRET: "${F1_HMAC_SECRET:-pitwall-demo-hmac-secret}"
+    ports:
+      - "20777:20777/udp"
+    volumes:
+      - f1_certs:/certs:ro
+    command: ["python", "-m", "gateway.edge_gateway"]
+
+  dashboard:
+    build: .
+    depends_on:
+      - factory-server
+    environment:
+      DATA_DIR: "/data"
+      LOGS_DIR: "/logs"
+    ports:
+      - "8000:8000"
+    volumes:
+      - f1_data:/data
+      - f1_logs:/logs
+    command: ["uvicorn", "dashboard.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  car-sim:
+    build: .
+    profiles: ["demo"]
+    depends_on:
+      - edge-gateway
+    command: ["python", "-m", "tools.car_simulator", "--host", "edge-gateway", "--port", "20777", "--hz", "60"]
+
+volumes:
+  f1_certs:
+  f1_data:
+  f1_logs:

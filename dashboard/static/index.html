@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>F1 Zero-Trust Telemetry Gateway</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #12161c;
+      --border: #232a34;
+      --text: #e6ebf2;
+      --muted: #8492a6;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --crit: #ef4444;
+      --accent: #38bdf8;
+      --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+      --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      padding: 16px 20px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .title-group h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+    }
+    .title-group span {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .status-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .pill {
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--panel);
+    }
+    .pill.ok { border-color: var(--ok); color: var(--ok); }
+    .pill.warn { border-color: var(--warn); color: var(--warn); }
+    .pill.crit { border-color: var(--crit); color: var(--crit); }
+
+    .grid-top {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .grid-mid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px 14px;
+    }
+    .card-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .metric-big {
+      font-family: var(--mono);
+      font-size: 32px;
+      font-weight: 600;
+      line-height: 1.1;
+    }
+    .metric-unit {
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    .sub-row {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .bar-track {
+      height: 8px;
+      background: #1b222c;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .bar-fill { height: 100%; width: 0%; transition: width 70ms linear; }
+    .bar-throttle { background: var(--ok); }
+    .bar-brake { background: var(--crit); }
+    .bar-rpm { background: var(--accent); }
+
+    .tyre-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-family: var(--mono);
+    }
+    .tyre-cell {
+      background: #0e1217;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 6px 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .tyre-pos { color: var(--muted); font-size: 11px; }
+
+    .latency-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+      font-family: var(--mono);
+    }
+    .lat-box {
+      background: #0e1217;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 6px 8px;
+    }
+    .lat-box small { display: block; color: var(--muted); font-size: 10px; }
+    .lat-box strong { font-size: 14px; }
+
+    canvas {
+      width: 100%;
+      height: 150px;
+      display: block;
+      background: #0e1217;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+    }
+
+    .table-wrap {
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    th, td {
+      text-align: left;
+      padding: 7px 10px;
+      border-bottom: 1px solid #1c222b;
+    }
+    th {
+      background: #0e1217;
+      color: var(--muted);
+      font-weight: 500;
+      position: sticky;
+      top: 0;
+    }
+    .sev {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 2px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .sev-CRITICAL { background: rgba(239,68,68,0.18); color: #f87171; }
+    .sev-HIGH { background: rgba(245,158,11,0.18); color: #fbbf24; }
+    .sev-WARNING { background: rgba(56,189,248,0.16); color: #38bdf8; }
+
+    @media (max-width: 900px) {
+      .grid-top { grid-template-columns: repeat(2, 1fr); }
+      .grid-mid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title-group">
+      <h1>F1 ZERO-TRUST TELEMETRY GATEWAY</h1>
+      <span>UDP :20777 &rarr; HMAC-SHA256 + mTLS 1.3 :8443 &rarr; FACTORY SIEM</span>
+    </div>
+    <div class="status-bar">
+      <span id="stream-pill" class="pill warn">WAITING</span>
+      <span id="sla-pill" class="pill">SLA: --</span>
+      <span id="rate-pill" class="pill">0.0 pkt/s</span>
+      <span id="total-pill" class="pill">RX: 0</span>
+    </div>
+  </header>
+
+  <section class="grid-top">
+    <div class="card">
+      <div class="card-label"><span>Speed</span><span id="drs-label">DRS OFF</span></div>
+      <div><span id="speed-val" class="metric-big">0</span><span class="metric-unit">KPH</span></div>
+      <div class="sub-row">
+        <span>FRAME <strong id="frame-val">0</strong></span>
+        <span>SEQ <strong id="seq-val">0</strong></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span>Powertrain</span><span id="gear-label">GEAR N</span></div>
+      <div><span id="rpm-val" class="metric-big">0</span><span class="metric-unit">RPM</span></div>
+      <div class="bar-track"><div id="rpm-bar" class="bar-fill bar-rpm"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span>Driver Inputs</span><span>PEDALS</span></div>
+      <div class="sub-row" style="margin-top:0"><span>THROTTLE</span><span id="thr-val">0%</span></div>
+      <div class="bar-track"><div id="thr-bar" class="bar-fill bar-throttle"></div></div>
+      <div class="sub-row"><span>BRAKE</span><span id="brk-val">0%</span></div>
+      <div class="bar-track"><div id="brk-bar" class="bar-fill bar-brake"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span>Tyre Surface</span><span>DEG C</span></div>
+      <div class="tyre-grid">
+        <div class="tyre-cell"><span class="tyre-pos">FL</span><span id="tyre-fl">--</span></div>
+        <div class="tyre-cell"><span class="tyre-pos">FR</span><span id="tyre-fr">--</span></div>
+        <div class="tyre-cell"><span class="tyre-pos">RL</span><span id="tyre-rl">--</span></div>
+        <div class="tyre-cell"><span class="tyre-pos">RR</span><span id="tyre-rr">--</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid-mid">
+    <div class="card">
+      <div class="card-label"><span>Speed Trace (Recent 90 Frames)</span><span>0 - 360 KPH</span></div>
+      <canvas id="speed-canvas" width="600" height="150"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span>Zero-Trust Overhead (HMAC + mTLS)</span><span>TARGET &lt; 5.0 ms</span></div>
+      <div class="latency-stats">
+        <div class="lat-box"><small>P50</small><strong id="lat-p50">0.00 ms</strong></div>
+        <div class="lat-box"><small>P95</small><strong id="lat-p95">0.00 ms</strong></div>
+        <div class="lat-box"><small>P99</small><strong id="lat-p99">0.00 ms</strong></div>
+        <div class="lat-box"><small>MAX</small><strong id="lat-max">0.00 ms</strong></div>
+      </div>
+      <canvas id="latency-canvas" width="440" height="110"></canvas>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-label">
+      <span>Factory SIEM Security &amp; Anomaly Feed</span>
+      <span id="alert-count">0 ALERTS</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:95px">TIME</th>
+            <th style="width:95px">SEVERITY</th>
+            <th style="width:210px">EVENT CODE</th>
+            <th style="width:190px">SOURCE</th>
+            <th>DETAIL</th>
+          </tr>
+        </thead>
+        <tbody id="siem-body">
+          <tr><td colspan="5" style="color:var(--muted)">No security anomalies logged yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+
+    function drawChart(canvasId, values, maxY, strokeColor, thresholdY = null) {
+      const canvas = el(canvasId);
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // Subtle horizontal grid lines
+      ctx.strokeStyle = "#1a212b";
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 3; i++) {
+        const y = (h / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Optional SLA threshold line
+      if (thresholdY !== null) {
+        const ty = h - (thresholdY / maxY) * h;
+        ctx.save();
+        ctx.strokeStyle = "#ef4444";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, ty);
+        ctx.lineTo(w, ty);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (!values || values.length < 2) return;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      values.forEach((v, i) => {
+        const x = (i / (values.length - 1)) * w;
+        const clamped = Math.max(0, Math.min(maxY, v));
+        const y = h - (clamped / maxY) * (h - 8) - 4;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    function formatTime(tsNs) {
+      const d = new Date(Math.floor(tsNs / 1e6));
+      return d.toTimeString().split(" ")[0];
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function render(data) {
+      const pill = el("stream-pill");
+      if (data.status === "live") {
+        pill.textContent = "LIVE STREAM";
+        pill.className = "pill ok";
+      } else if (data.status === "idle") {
+        pill.textContent = "IDLE";
+        pill.className = "pill warn";
+      } else {
+        pill.textContent = "WAITING";
+        pill.className = "pill warn";
+      }
+
+      el("rate-pill").textContent = `${(data.rx_rate || 0).toFixed(1)} pkt/s`;
+      el("total-pill").textContent = `RX: ${data.total_packets || 0}`;
+      el("alert-count").textContent = `${data.total_alerts || 0} ALERTS`;
+
+      if (data.telemetry) {
+        const t = data.telemetry;
+        el("speed-val").textContent = t.speed_kph;
+        el("frame-val").textContent = t.frame_id;
+        el("seq-val").textContent = t.seq_num;
+        el("drs-label").textContent = t.drs ? "DRS OPEN" : "DRS OFF";
+        el("drs-label").style.color = t.drs ? "var(--ok)" : "var(--muted)";
+
+        el("rpm-val").textContent = t.rpm;
+        el("gear-label").textContent = t.gear === 0 ? "GEAR N" : (t.gear === -1 ? "GEAR R" : `GEAR ${t.gear}`);
+        el("rpm-bar").style.width = `${Math.min(100, (t.rpm / 13500) * 100)}%`;
+
+        const thrPct = Math.round(t.throttle * 100);
+        const brkPct = Math.round(t.brake * 100);
+        el("thr-val").textContent = `${thrPct}%`;
+        el("thr-bar").style.width = `${thrPct}%`;
+        el("brk-val").textContent = `${brkPct}%`;
+        el("brk-bar").style.width = `${brkPct}%`;
+
+        // F1 packet order: [RL, RR, FL, FR]
+        const [rl, rr, fl, fr] = t.tyre_temps || [0, 0, 0, 0];
+        el("tyre-fl").textContent = `${fl}°`;
+        el("tyre-fr").textContent = `${fr}°`;
+        el("tyre-rl").textContent = `${rl}°`;
+        el("tyre-rr").textContent = `${rr}°`;
+      }
+
+      if (data.latency) {
+        const l = data.latency;
+        el("lat-p50").textContent = `${l.p50.toFixed(2)} ms`;
+        el("lat-p95").textContent = `${l.p95.toFixed(2)} ms`;
+        el("lat-p99").textContent = `${l.p99.toFixed(2)} ms`;
+        el("lat-max").textContent = `${l.max.toFixed(2)} ms`;
+
+        const sla = el("sla-pill");
+        sla.textContent = l.sla_pass ? `SLA PASS (${l.p99.toFixed(2)}ms)` : `SLA BREACH (${l.p99.toFixed(2)}ms)`;
+        sla.className = l.sla_pass ? "pill ok" : "pill crit";
+      }
+
+      if (data.trace) {
+        drawChart("speed-canvas", data.trace.speed, 360, "#38bdf8");
+        const maxLat = Math.max(6.0, ...(data.trace.latency || [1.0]));
+        drawChart("latency-canvas", data.trace.latency, maxLat, "#22c55e", 5.0);
+      }
+
+      if (data.alerts && data.alerts.length > 0) {
+        el("siem-body").innerHTML = data.alerts
+          .map(
+            (a) => `
+            <tr>
+              <td>${formatTime(a.ts_ns)}</td>
+              <td><span class="sev sev-${escapeHtml(a.severity)}">${escapeHtml(a.severity)}</span></td>
+              <td>${escapeHtml(a.code)}</td>
+              <td>${escapeHtml(a.source)}</td>
+              <td>${escapeHtml(a.detail)}</td>
+            </tr>`
+          )
+          .join("");
+      }
+    }
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws/live`);
+      ws.onmessage = (evt) => render(JSON.parse(evt.data));
+      ws.onclose = () => setTimeout(connect, 1500);
+    }
+    connect();
+  </script>
+</body>
+</html>
