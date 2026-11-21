@@ -1,4 +1,3 @@
-$content = @'
 # Security Policy
 
 ## Supported Versions
@@ -31,5 +30,3 @@ If you discover a cryptographic flaw, parser crash, or bypass in the gateway or 
 3. Include a minimal reproduction script or packet capture along with expected vs. actual behavior.
 
 Reports are acknowledged within 72 hours, and confirmed issues are patched before public disclosure.
-'@
-[System.IO.File]::WriteAllText("$PWD\SECURITY.md", $content)
